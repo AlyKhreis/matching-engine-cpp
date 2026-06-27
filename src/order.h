@@ -5,7 +5,7 @@
 enum class Side { BUY, SELL };
 enum class OrderType { LIMIT, MARKET };
 
-class Order {
+struct Order {
     uint64_t order_id;
     Side side;
     OrderType type;

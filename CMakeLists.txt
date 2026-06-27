@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD 17)
 
 include_directories(src)
 
+
 add_executable(matching_engine
         main.cpp
+        src/order_book.cpp
+        src/price_level.cpp
 )

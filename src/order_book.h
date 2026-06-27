@@ -1,11 +1,14 @@
 #ifndef MATCHING_ENGINE_CPP_ORDER_BOOK_H
 #define MATCHING_ENGINE_CPP_ORDER_BOOK_H
 
-
+#include <cstdint>
+#include <unordered_map>
+#include "order.h"
+#include "price_level.h"
 
 class OrderBook {
 public:
-    OrderBook(uint64_t max_price_ticks);
+    explicit OrderBook(uint64_t max_price_ticks);
     ~OrderBook();
 
     void add_order(Order* o);
@@ -16,6 +19,8 @@ public:
 
     void print_book(int depth = 5) const;  // debug helper
 
+    OrderBook(const OrderBook&) = delete;
+    OrderBook& operator=(const OrderBook&) = delete;
 private:
     uint64_t max_price_ticks_;
     PriceLevel* bid_levels_;     // array, size max_price_ticks_
