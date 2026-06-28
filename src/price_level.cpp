@@ -1,8 +1,6 @@
 #include "price_level.h"
 
 
-// price_level.cpp
-#include "price_level.h"
 
 void PriceLevel::add_order(Order* o) {
     o->next = nullptr;
@@ -17,6 +15,7 @@ void PriceLevel::add_order(Order* o) {
     tail_ = o;
 
     total_quantity_ += o->quantity;
+    
 }
 
 void PriceLevel::remove_order(Order* o) {

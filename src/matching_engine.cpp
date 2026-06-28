@@ -29,6 +29,7 @@ void MatchingEngine::process_order(Order* o) {
 
                 o->quantity -= fill_qty;
                 resting->quantity -= fill_qty;
+                lvl->reduce_total(fill_qty);
 
                 if (resting->quantity == 0) {
                     book_->cancel_order(resting->order_id);
@@ -60,7 +61,7 @@ void MatchingEngine::process_order(Order* o) {
 
                 o->quantity -= fill_qty;
                 resting->quantity -= fill_qty;
-
+                lvl->reduce_total(fill_qty);
                 if (resting->quantity == 0) {
                     book_->cancel_order(resting->order_id);
                 }

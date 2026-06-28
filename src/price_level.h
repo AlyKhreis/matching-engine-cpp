@@ -18,7 +18,7 @@ public:
     uint64_t price() const { return price_; }
     uint64_t total_quantity() const { return total_quantity_; }
     Order* head() const { return head_; }
-
+    void reduce_total(uint64_t delta) { total_quantity_ -= delta; }
 private:
     uint64_t price_;
     Order* head_;
