@@ -21,6 +21,10 @@ public:
 
     OrderBook(const OrderBook&) = delete;
     OrderBook& operator=(const OrderBook&) = delete;
+
+    PriceLevel *bid_level_at(uint64_t price) {return &bid_levels_[price];}
+    PriceLevel *ask_level_at(uint64_t price) {return &ask_levels_[price];}
+
 private:
     uint64_t max_price_ticks_;
     PriceLevel* bid_levels_;     // array, size max_price_ticks_
