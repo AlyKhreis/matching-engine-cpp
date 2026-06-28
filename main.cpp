@@ -2,106 +2,79 @@
 #include "order.h"
 #include "order_book.h"
 #include "matching_engine.h"
+#include <chrono>
+#include <random>
+#include <algorithm>
+#include <vector>
 
 
 
-
-void print_trades(const MatchingEngine& engine) {
-    std::cout << "Trades:\n";
-    for (const auto& t : engine.get_trade_log()) {
-        std::cout << "  buy=" << t.buy_order_id << " sell=" << t.sell_order_id
-                  << " price=" << t.price << " qty=" << t.quantity << "\n";
-    }
-}
 
 int main() {
-    // ---------- TEST 1: Crossing limit BUY fills two ask levels ----------
-    {
-        std::cout << "\n========== TEST 1: Crossing limit BUY ==========\n";
-        OrderBook book(100000);
-        MatchingEngine engine(&book);
+     OrderBook book(100000);
+    MatchingEngine engine(&book);
 
-        Order* o1 = new Order{1, Side::BUY,  OrderType::LIMIT, 14990, 100, 1, nullptr, nullptr};
-        Order* o2 = new Order{2, Side::BUY,  OrderType::LIMIT, 14985, 200, 2, nullptr, nullptr};
-        Order* o3 = new Order{3, Side::SELL, OrderType::LIMIT, 15010, 150, 3, nullptr, nullptr};
-        Order* o4 = new Order{4, Side::SELL, OrderType::LIMIT, 15015,  50, 4, nullptr, nullptr};
-        engine.process_order(o1);
-        engine.process_order(o2);
-        engine.process_order(o3);
-        engine.process_order(o4);
+    std::mt19937_64 rng(42);
+    std::uniform_int_distribution<int> side_dist(0, 1);
+    std::uniform_int_distribution<uint64_t> price_dist(14900, 15100);
+    std::uniform_int_distribution<uint32_t> qty_dist(1, 100);
 
-        Order* o5 = new Order{5, Side::BUY, OrderType::LIMIT, 15015, 200, 5, nullptr, nullptr};
-        engine.process_order(o5);
+    const int N = 1'000'000;
+    std::vector<Order*> orders;
+    orders.reserve(N);
 
-        std::cout << "Book after BUY 200 @ 15015:\n";
-        book.print_book();
-        print_trades(engine);
-
-        delete o1; delete o2; delete o3; delete o4; delete o5;
+    // Generate all orders upfront (separate from the hot loop)
+    for (int i = 0; i < N; i++) {
+        Side s = (side_dist(rng) == 0) ? Side::BUY : Side::SELL;
+        uint64_t price = price_dist(rng);
+        uint32_t qty = qty_dist(rng);
+        Order* o = new Order{
+            static_cast<uint64_t>(i + 1),
+            s,
+            OrderType::LIMIT,
+            price,
+            qty,
+            static_cast<uint64_t>(i),
+            nullptr, nullptr
+        };
+        orders.push_back(o);
     }
 
-    // ---------- TEST 2: Partial fill ----------
-    {
-        std::cout << "\n========== TEST 2: Partial fill ==========\n";
-        OrderBook book(100000);
-        MatchingEngine engine(&book);
+    // Latency tracking
+    std::vector<uint64_t> latencies_ns;
+    latencies_ns.reserve(N);
 
-        Order* r1 = new Order{10, Side::BUY,  OrderType::LIMIT, 15000, 100, 10, nullptr, nullptr};
-        engine.process_order(r1);
+    auto t_start = std::chrono::high_resolution_clock::now();
 
-        Order* s1 = new Order{11, Side::SELL, OrderType::LIMIT, 15000, 60, 11, nullptr, nullptr};
-        engine.process_order(s1);
-
-        std::cout << "Book after partial fill (resting 100 - 60 = 40):\n";
-        book.print_book();
-        print_trades(engine);
-        std::cout << "Best bid: " << book.best_bid() << "\n";
-
-        delete r1; delete s1;
+    for (int i = 0; i < N; i++) {
+        auto t0 = std::chrono::high_resolution_clock::now();
+        engine.process_order(orders[i]);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        latencies_ns.push_back(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count()
+        );
     }
 
-    // ---------- TEST 3: Market order sweeps liquidity ----------
-    {
-        std::cout << "\n========== TEST 3: Market SELL sweeps bids ==========\n";
-        OrderBook book(100000);
-        MatchingEngine engine(&book);
+    auto t_end = std::chrono::high_resolution_clock::now();
+    auto total_us = std::chrono::duration_cast<std::chrono::microseconds>(t_end - t_start).count();
 
-        Order* b1 = new Order{20, Side::BUY, OrderType::LIMIT, 15000, 100, 20, nullptr, nullptr};
-        Order* b2 = new Order{21, Side::BUY, OrderType::LIMIT, 14995, 200, 21, nullptr, nullptr};
-        Order* b3 = new Order{22, Side::BUY, OrderType::LIMIT, 14990, 150, 22, nullptr, nullptr};
-        engine.process_order(b1);
-        engine.process_order(b2);
-        engine.process_order(b3);
+    double ops_per_sec = N / (total_us / 1'000'000.0);
 
-        // Market SELL for 250 shares - should consume b1 fully + 150 of b2
-        Order* m1 = new Order{23, Side::SELL, OrderType::MARKET, 0, 250, 23, nullptr, nullptr};
-        engine.process_order(m1);
+    // Compute percentiles
+    std::sort(latencies_ns.begin(), latencies_ns.end());
+    auto p50 = latencies_ns[N * 50 / 100];
+    auto p99 = latencies_ns[N * 99 / 100];
+    auto p999 = latencies_ns[N * 999 / 1000];
 
-        std::cout << "Book after MARKET SELL 250:\n";
-        book.print_book();
-        print_trades(engine);
+    std::cout << "Processed " << N << " orders in " << total_us << " us\n";
+    std::cout << "Throughput: " << ops_per_sec << " ops/sec\n";
+    std::cout << "Latency p50:  " << p50 << " ns\n";
+    std::cout << "Latency p99:  " << p99 << " ns\n";
+    std::cout << "Latency p999: " << p999 << " ns\n";
+    std::cout << "Trades emitted: " << engine.get_trade_log().size() << "\n";
 
-        delete b1; delete b2; delete b3; delete m1;
-    }
+    for (auto* o : orders) delete o;
 
-    // ---------- TEST 4: Non-crossing limit just rests ----------
-    {
-        std::cout << "\n========== TEST 4: Non-crossing limit BUY rests ==========\n";
-        OrderBook book(100000);
-        MatchingEngine engine(&book);
 
-        Order* a1 = new Order{30, Side::SELL, OrderType::LIMIT, 15010, 100, 30, nullptr, nullptr};
-        engine.process_order(a1);
-
-        // Bid at 14000 is well below best ask 15010 - should not cross
-        Order* b1 = new Order{31, Side::BUY, OrderType::LIMIT, 14000, 50, 31, nullptr, nullptr};
-        engine.process_order(b1);
-
-        std::cout << "Book (BUY at 14000 should rest, no trades):\n";
-        book.print_book();
-        print_trades(engine);
-
-        delete a1; delete b1;
-    }
     return 0;
 }
